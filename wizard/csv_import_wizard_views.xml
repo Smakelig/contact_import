@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="view_contact_import_csv_wizard_form" model="ir.ui.view">
+        <field name="name">contact.import.csv.wizard.form</field>
+        <field name="model">contact.import.csv.wizard</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <field name="batch_name"/>
+                        <field name="csv_file" filename="csv_filename"/>
+                        <field name="csv_filename" invisible="1"/>
+                    </group>
+                    <group string="Column Mapping">
+                        <p class="text-muted">
+                            Type the exact column header names used in your CSV file.
+                            For a Google Contacts export, use: First Name Column =
+                            "First Name", Last Name Column = "Last Name", Email
+                            Column = "E-mail 1 - Value", Phone Column = "Phone 1 - Value",
+                            Job Title Column = "Organization Title", Labels Column =
+                            "Labels", Notes Column = "Notes". Anything else you want
+                            kept (Birthday, Nickname, a second email/phone, etc.) -
+                            list those column names in "Extra columns to append to
+                            Notes" below so nothing gets silently dropped.
+                        </p>
+                        <field name="name_column" string="Name column (single, if you have one)"/>
+                        <field name="first_name_column" string="First Name column"/>
+                        <field name="last_name_column" string="Last Name column"/>
+                        <field name="email_column" string="Email column"/>
+                        <field name="phone_column" string="Phone column"/>
+                        <field name="job_title_column" string="Job Title column"/>
+                        <field name="labels_column" string="Labels/Tags column"/>
+                        <field name="notes_column" string="Notes column"/>
+                        <field name="extra_notes_columns"/>
+                    </group>
+                </sheet>
+                <footer>
+                    <button name="action_import" string="Import" type="object" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_contact_import_csv_wizard" model="ir.actions.act_window">
+        <field name="name">Import Contacts from CSV</field>
+        <field name="res_model">contact.import.csv.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <menuitem id="menu_contact_import_csv_wizard" name="Import from CSV" parent="menu_contact_import_root"
+              action="action_contact_import_csv_wizard" sequence="5"/>
+</odoo>

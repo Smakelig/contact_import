@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <!-- Staging record list view -->
+    <record id="view_import_staging_record_list" model="ir.ui.view">
+        <field name="name">import.staging.record.list</field>
+        <field name="model">import.staging.record</field>
+        <field name="arch" type="xml">
+            <tree decoration-muted="state in ('ignored',)" decoration-success="state in ('linked', 'created')">
+                <field name="display_name"/>
+                <field name="email"/>
+                <field name="phone"/>
+                <field name="source_type"/>
+                <field name="batch_id"/>
+                <field name="best_confidence" widget="percentage" string="Best Match %"/>
+                <field name="state" widget="badge"
+                       decoration-info="state == 'new'"
+                       decoration-warning="state == 'reviewed'"
+                       decoration-success="state in ('linked', 'created')"
+                       decoration-muted="state == 'ignored'"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Staging record form view -->
+    <record id="view_import_staging_record_form" model="ir.ui.view">
+        <field name="name">import.staging.record.form</field>
+        <field name="model">import.staging.record</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_compute_candidates" string="Recompute Matches" type="object" class="btn-secondary"/>
+                    <button name="action_ignore" string="Ignore" type="object"
+                            invisible="state in ('linked', 'created', 'ignored')"/>
+                    <button name="action_create_new" string="Create New Contact" type="object" class="btn-primary"
+                            invisible="state in ('linked', 'created', 'ignored')"
+                            confirm="This will create a new contact in res.partner from this row's data. Continue?"/>
+                    <field name="state" widget="statusbar" statusbar_visible="new,reviewed,linked,created"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="display_name"/>
+                            <field name="email"/>
+                            <field name="phone"/>
+                            <field name="function"/>
+                            <field name="tag_names"/>
+                        </group>
+                        <group>
+                            <field name="profile_id" readonly="1"/>
+                            <field name="batch_id" readonly="1"/>
+                            <field name="source_ref" readonly="1" groups="base.group_no_one"/>
+                            <field name="linked_record_ref" readonly="1"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Candidate Matches">
+                            <field name="candidate_ids">
+                                <tree editable="bottom" create="false" delete="false">
+                                    <field name="matched_record_ref"/>
+                                    <field name="confidence" widget="percentage"/>
+                                    <field name="match_breakdown"/>
+                                    <button name="action_link_candidate_button" string="Link to this" type="object" class="btn-link"/>
+                                </tree>
+                            </field>
+                        </page>
+                        <page string="Notes">
+                            <field name="notes" readonly="1"/>
+                        </page>
+                        <page string="Raw Data" groups="base.group_no_one">
+                            <field name="raw_data" readonly="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_import_staging_record" model="ir.actions.act_window">
+        <field name="name">Staged Contacts</field>
+        <field name="res_model">import.staging.record</field>
+        <field name="view_mode">tree,form</field>
+        <field name="domain">[('profile_id.target_model_name', '=', 'res.partner')]</field>
+        <field name="context">{'search_default_new': 1}</field>
+    </record>
+
+    <!-- Batch views -->
+    <record id="view_import_batch_list" model="ir.ui.view">
+        <field name="name">import.batch.list</field>
+        <field name="model">import.batch</field>
+        <field name="arch" type="xml">
+            <tree>
+                <field name="name"/>
+                <field name="source_type"/>
+                <field name="create_date"/>
+                <field name="staging_count" string="Total"/>
+                <field name="new_count" string="New"/>
+                <field name="linked_count" string="Linked"/>
+                <field name="created_count" string="Created"/>
+                <field name="ignored_count" string="Ignored"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_import_batch_form" model="ir.ui.view">
+        <field name="name">import.batch.form</field>
+        <field name="model">import.batch</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="source_type"/>
+                        <field name="profile_id"/>
+                    </group>
+                    <field name="staging_ids">
+                        <tree decoration-muted="state == 'ignored'" decoration-success="state in ('linked', 'created')">
+                            <field name="display_name"/>
+                            <field name="email"/>
+                            <field name="phone"/>
+                            <field name="best_confidence" widget="percentage" string="Best Match %"/>
+                            <field name="state" widget="badge"/>
+                        </tree>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_import_batch" model="ir.actions.act_window">
+        <field name="name">Import Batches</field>
+        <field name="res_model">import.batch</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <!-- Menu -->
+    <menuitem id="menu_contact_import_root" name="Contact Import" sequence="90"/>
+    <menuitem id="menu_import_staging_record" name="Staged Contacts" parent="menu_contact_import_root"
+              action="action_import_staging_record" sequence="10"/>
+    <menuitem id="menu_import_batch" name="Import Batches" parent="menu_contact_import_root"
+              action="action_import_batch" sequence="20"/>
+</odoo>

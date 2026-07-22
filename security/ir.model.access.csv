@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_import_match_profile,import.match.profile.user,model_import_match_profile,base.group_user,1,0,0,0
+access_import_match_rule,import.match.rule.user,model_import_match_rule,base.group_user,1,0,0,0
+access_import_batch,import.batch.user,model_import_batch,base.group_user,1,1,1,1
+access_import_staging_record,import.staging.record.user,model_import_staging_record,base.group_user,1,1,1,1
+access_import_staging_candidate,import.staging.candidate.user,model_import_staging_candidate,base.group_user,1,1,1,0
+access_contact_import_csv_wizard,contact.import.csv.wizard.user,model_contact_import_csv_wizard,base.group_user,1,1,1,1

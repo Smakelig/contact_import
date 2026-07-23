@@ -9,6 +9,12 @@
                 <field name="display_name"/>
                 <field name="email"/>
                 <field name="phone"/>
+                <field name="function"/>
+                <field name="street"/>
+                <field name="city"/>
+                <field name="zip_code"/>
+                <field name="country_name"/>
+                <field name="tag_names"/>
                 <field name="source_type"/>
                 <field name="batch_id"/>
                 <field name="best_confidence" widget="percentage" string="Best Match %"/>
@@ -44,6 +50,12 @@
                             <field name="phone"/>
                             <field name="function"/>
                             <field name="tag_names"/>
+                        </group>
+                        <group>
+                            <field name="street"/>
+                            <field name="city"/>
+                            <field name="zip_code"/>
+                            <field name="country_name"/>
                         </group>
                         <group>
                             <field name="profile_id" readonly="1"/>
@@ -117,6 +129,12 @@
                             <field name="display_name"/>
                             <field name="email"/>
                             <field name="phone"/>
+                            <field name="function"/>
+                            <field name="street"/>
+                            <field name="city"/>
+                            <field name="zip_code"/>
+                            <field name="country_name"/>
+                            <field name="tag_names"/>
                             <field name="best_confidence" widget="percentage" string="Best Match %"/>
                             <field name="state" widget="badge"/>
                         </tree>

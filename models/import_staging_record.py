@@ -47,6 +47,15 @@ class ImportStagingRecord(models.Model):
              "'Labels' column). Matching/created res.partner.category "
              "records are applied when this row is linked or created.",
     )
+    street = fields.Char(help="Maps to res.partner.street.")
+    city = fields.Char(help="Maps to res.partner.city.")
+    zip_code = fields.Char(string="ZIP/Postal Code", help="Maps to res.partner.zip.")
+    country_name = fields.Char(
+        help="Raw country name/code from the source. Resolved to a real "
+             "res.country record by name search when this row is created "
+             "(not stored as a Many2one here, since the source's spelling "
+             "may not exactly match Odoo's country names until resolved).",
+    )
 
     state = fields.Selection([
         ("new", "New"),
@@ -129,6 +138,21 @@ class ImportStagingRecord(models.Model):
             tags |= tag
         return tags
 
+    def _resolve_country(self):
+        """Looks up a res.country by name (case-insensitive) or ISO code
+        from the raw country_name text. Read-only, returns an empty
+        recordset if nothing matches rather than creating one - country
+        lists are fixed reference data, not something to invent from a
+        typo'd CSV value."""
+        self.ensure_one()
+        if not self.country_name:
+            return self.env["res.country"].browse()
+        name = self.country_name.strip()
+        country = self.env["res.country"].search([("name", "=ilike", name)], limit=1)
+        if not country and len(name) in (2, 3):
+            country = self.env["res.country"].search([("code", "=ilike", name)], limit=1)
+        return country
+
     def action_create_new(self):
         """Explicit human action: create a brand-new record in the
         target model from this staged row's data."""
@@ -143,6 +167,16 @@ class ImportStagingRecord(models.Model):
             vals["function"] = self.function
         if self.notes and "comment" in Target._fields:
             vals["comment"] = self.notes
+        if self.street and "street" in Target._fields:
+            vals["street"] = self.street
+        if self.city and "city" in Target._fields:
+            vals["city"] = self.city
+        if self.zip_code and "zip" in Target._fields:
+            vals["zip"] = self.zip_code
+        if self.country_name and "country_id" in Target._fields:
+            country = self._resolve_country()
+            if country:
+                vals["country_id"] = country.id
         if "category_id" in Target._fields:
             tags = self._resolve_tags()
             if tags:

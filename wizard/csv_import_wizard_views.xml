@@ -31,6 +31,10 @@
                         <field name="job_title_column" string="Job Title column"/>
                         <field name="labels_column" string="Labels/Tags column"/>
                         <field name="notes_column" string="Notes column"/>
+                        <field name="street_column" string="Street column"/>
+                        <field name="city_column" string="City column"/>
+                        <field name="zip_column" string="Postal Code column"/>
+                        <field name="country_column" string="Country column"/>
                         <field name="extra_notes_columns"/>
                     </group>
                 </sheet>

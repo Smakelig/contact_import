@@ -32,25 +32,65 @@ class ContactImportCsvWizard(models.TransientModel):
     batch_name = fields.Char(required=True, default=lambda self: "CSV import %s" % fields.Date.today())
 
     name_column = fields.Char(
-        default="name",
         help="Single combined name column, if your file has one. Leave "
              "blank and use First/Last Name Column instead for exports "
              "like Google Contacts' CSV, which splits the name.",
     )
-    first_name_column = fields.Char(help="e.g. 'First Name' - Google Contacts CSV export uses this.")
-    last_name_column = fields.Char(help="e.g. 'Last Name' - Google Contacts CSV export uses this.")
-    email_column = fields.Char(default="email", help="e.g. 'E-mail 1 - Value' for Google Contacts CSV export.")
-    phone_column = fields.Char(default="phone", help="e.g. 'Phone 1 - Value' for Google Contacts CSV export.")
-    job_title_column = fields.Char(help="Maps to Job Title (res.partner.function). e.g. 'Organization Title'.")
-    labels_column = fields.Char(help="Maps to Tags (res.partner.category_id). e.g. Google's 'Labels' column.")
-    notes_column = fields.Char(help="Maps to Notes (res.partner.comment). e.g. Google's 'Notes' column.")
+    first_name_column = fields.Char(
+        default="First Name",
+        help="e.g. 'First Name' - Google Contacts CSV export uses this.",
+    )
+    last_name_column = fields.Char(
+        default="Last Name",
+        help="e.g. 'Last Name' - Google Contacts CSV export uses this.",
+    )
+    email_column = fields.Char(
+        default="E-mail 1 - Value",
+        help="e.g. 'E-mail 1 - Value' for Google Contacts CSV export.",
+    )
+    phone_column = fields.Char(
+        default="Phone 1 - Value",
+        help="e.g. 'Phone 1 - Value' for Google Contacts CSV export.",
+    )
+    job_title_column = fields.Char(
+        default="Organization Title",
+        help="Maps to Job Title (res.partner.function). e.g. 'Organization Title'.",
+    )
+    labels_column = fields.Char(
+        default="Labels",
+        help="Maps to Tags (res.partner.category_id). e.g. Google's 'Labels' column.",
+    )
+    notes_column = fields.Char(
+        default="Notes",
+        help="Maps to Notes (res.partner.comment). e.g. Google's 'Notes' column.",
+    )
+    street_column = fields.Char(
+        default="Address 1 - Street",
+        help="Maps to Street (res.partner.street). e.g. Google's 'Address 1 - Street'.",
+    )
+    city_column = fields.Char(
+        default="Address 1 - City",
+        help="Maps to City (res.partner.city). e.g. Google's 'Address 1 - City'.",
+    )
+    zip_column = fields.Char(
+        string="Postal Code column",
+        default="Address 1 - Postal Code",
+        help="Maps to ZIP (res.partner.zip). e.g. Google's 'Address 1 - Postal Code'.",
+    )
+    country_column = fields.Char(
+        default="Address 1 - Country",
+        help="Maps to Country (res.partner.country_id), resolved by name/code "
+             "lookup. e.g. Google's 'Address 1 - Country'.",
+    )
     extra_notes_columns = fields.Char(
         string="Extra columns to append to Notes",
+        default="Middle Name, Nickname, Birthday, Organization Department, Organization Name",
         help="Comma-separated list of any other column names you want kept "
-             "even though res.partner has no dedicated field for them - e.g. "
-             "'Middle Name, Nickname, Birthday, Organization Department, "
-             "E-mail 2 - Value, Phone 2 - Value'. Each is added as a "
-             "labeled line in Notes rather than being silently dropped.",
+             "even though res.partner has no dedicated field for them. Each "
+             "is added as a labeled line in Notes rather than being "
+             "silently dropped. Defaults cover Google's common extras; add "
+             "'E-mail 2 - Value, Phone 2 - Value' etc. if your export has "
+             "multiple emails/phones per contact.",
     )
 
     def _get_contacts_profile(self):
@@ -138,6 +178,10 @@ class ContactImportCsvWizard(models.TransientModel):
             phone = (row.get(self.phone_column) or "").strip() if self.phone_column else ""
             job_title = (row.get(self.job_title_column) or "").strip() if self.job_title_column else ""
             tag_names = (row.get(self.labels_column) or "").strip() if self.labels_column else ""
+            street = (row.get(self.street_column) or "").strip() if self.street_column else ""
+            city = (row.get(self.city_column) or "").strip() if self.city_column else ""
+            zip_code = (row.get(self.zip_column) or "").strip() if self.zip_column else ""
+            country_name = (row.get(self.country_column) or "").strip() if self.country_column else ""
             notes = self._build_notes(row, reader.fieldnames)
 
             # Stable ref so re-importing the same file doesn't create
@@ -163,6 +207,10 @@ class ContactImportCsvWizard(models.TransientModel):
                 "phone": phone or False,
                 "function": job_title or False,
                 "tag_names": tag_names or False,
+                "street": street or False,
+                "city": city or False,
+                "zip_code": zip_code or False,
+                "country_name": country_name or False,
                 "notes": notes or False,
                 "raw_data": str(row),
             })

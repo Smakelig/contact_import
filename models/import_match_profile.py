@@ -28,20 +28,30 @@ class ImportMatchProfile(models.Model):
     rule_ids = fields.One2many("import.match.rule", "profile_id", string="Matching Rules")
     active = fields.Boolean(default=True)
 
-    def _normalize_phone_variants(self, phone):
-        """Same normalization approach as discuss_addons' phone matching
-        (discuss_channel.py / discuss_channel_external_contact.py) -
-        kept as an independent copy here rather than a cross-module
-        import, since contact_import doesn't depend on discuss_addons
-        and shouldn't need to for a completely unrelated feature."""
+    def _phone_digits(self, phone):
+        """Digits only, no + / spaces / dashes."""
         if not phone:
-            return []
-        digits_only = phone.replace('+', '').replace(' ', '').replace('-', '')
-        variants = [phone, '+' + digits_only, digits_only]
-        if len(digits_only) > 9:
-            variants.append(digits_only[-9:])
-            variants.append('0' + digits_only[-9:])
-        return variants
+            return ""
+        return "".join(c for c in phone if c.isdigit())
+
+    def _phone_match_score(self, value_digits, target_digits):
+        """Graduated confidence (0.0-1.0) for how well two digit-only
+        phone strings match, instead of a binary yes/no. Phone numbers
+        are a more stable identifier than free-text names, so it's
+        worth extracting partial credit from a partial match rather
+        than only ever awarding full credit or none.
+
+        Tiers: 1.0 exact, 0.9 last-9-digit (national number, country
+        code differs), 0.7 last-7-digit (partial), 0.0 no match."""
+        if not value_digits or not target_digits:
+            return 0.0
+        if value_digits == target_digits:
+            return 1.0
+        if len(value_digits) >= 9 and len(target_digits) >= 9 and value_digits[-9:] == target_digits[-9:]:
+            return 0.9
+        if len(value_digits) >= 7 and len(target_digits) >= 7 and value_digits[-7:] == target_digits[-7:]:
+            return 0.7
+        return 0.0
 
     def _find_candidates(self, record_vals, limit=5):
         """Given a dict of {field_name: value} for one staged record,
@@ -67,17 +77,26 @@ class ImportMatchProfile(models.Model):
                                      "%s: exact match" % rule.field_name)
 
             elif rule.match_method == "phone_normalized":
-                variants = self._normalize_phone_variants(value)
-                if not variants:
+                value_digits = self._phone_digits(value)
+                if len(value_digits) < 7:
                     continue
-                domain = []
-                for v in variants:
-                    domain = ["|"] + domain if domain else domain
-                    domain.append((rule.field_name, "=", v))
-                matches = Target.search(domain) if domain else Target.browse()
+                suffix = value_digits[-7:]
+                matches = Target.search([(rule.field_name, "ilike", suffix)])
                 for m in matches:
-                    self._add_score(scores, m, rule.weight, rule.weight,
-                                     "%s: phone match" % rule.field_name)
+                    target_value = m[rule.field_name]
+                    target_digits = self._phone_digits(target_value)
+                    tier_score = self._phone_match_score(value_digits, target_digits)
+                    if tier_score <= 0:
+                        continue
+                    contribution = rule.weight * tier_score
+                    if tier_score == 1.0:
+                        label = "exact match"
+                    elif tier_score == 0.9:
+                        label = "national number match (country code differs)"
+                    else:
+                        label = "partial match (last 7 digits)"
+                    self._add_score(scores, m, contribution, rule.weight,
+                                     "%s: %s (%d%%)" % (rule.field_name, label, round(tier_score * 100)))
 
             elif rule.match_method == "trigram":
                 # Field/table names are quoted as SQL identifiers (not
@@ -103,7 +122,11 @@ class ImportMatchProfile(models.Model):
 
         results = []
         for entry in scores.values():
-            confidence = round(100 * entry["score"] / entry["max_score"], 1) if entry["max_score"] else 0.0
+            # Stored as a 0.0-1.0 fraction, not 0-100 - Odoo's
+            # percentage widget multiplies the stored value by 100 for
+            # display, so storing 0-100 here produced "10000%" on
+            # screen instead of "100%".
+            confidence = round(entry["score"] / entry["max_score"], 3) if entry["max_score"] else 0.0
             results.append({
                 "record": entry["record"],
                 "confidence": confidence,

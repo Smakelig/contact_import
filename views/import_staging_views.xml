@@ -11,19 +11,56 @@
                 <field name="phone"/>
                 <field name="function"/>
                 <field name="street"/>
+                <field name="street2"/>
                 <field name="city"/>
                 <field name="zip_code"/>
+                <field name="state_name"/>
                 <field name="country_name"/>
                 <field name="tag_names"/>
                 <field name="source_type"/>
                 <field name="batch_id"/>
                 <field name="best_confidence" widget="percentage" string="Best Match %"/>
+                <field name="instagram_enrichment_note" optional="hide"/>
                 <field name="state" widget="badge"
                        decoration-info="state == 'new'"
                        decoration-warning="state == 'reviewed'"
                        decoration-success="state in ('linked', 'created')"
                        decoration-muted="state == 'ignored'"/>
             </tree>
+        </field>
+    </record>
+
+    <!-- Staging record search view: without this, "search_default_new"
+         on action_import_staging_record's context has no "new" filter
+         to actually apply, and reviewers have no quick way to narrow
+         down a big batch by state or confidence. -->
+    <record id="view_import_staging_record_search" model="ir.ui.view">
+        <field name="name">import.staging.record.search</field>
+        <field name="model">import.staging.record</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="display_name"/>
+                <field name="email"/>
+                <field name="phone"/>
+                <field name="batch_id"/>
+                <filter name="new" string="New" domain="[('state', '=', 'new')]"/>
+                <filter name="reviewed" string="Reviewed" domain="[('state', '=', 'reviewed')]"/>
+                <filter name="linked" string="Linked to Existing" domain="[('state', '=', 'linked')]"/>
+                <filter name="created" string="Created New" domain="[('state', '=', 'created')]"/>
+                <filter name="ignored" string="Ignored" domain="[('state', '=', 'ignored')]"/>
+                <separator/>
+                <filter name="high_confidence" string="High Confidence Match (80%+)"
+                        domain="[('best_confidence', '>=', 0.8)]"/>
+                <filter name="no_candidates" string="No Candidate Matches"
+                        domain="[('best_confidence', '=', 0.0)]"/>
+                <filter name="instagram_enriched" string="Instagram-Enriched"
+                        domain="[('instagram_enrichment_note', '!=', False)]"/>
+                <separator/>
+                <group string="Group By">
+                    <filter name="group_by_batch" string="Batch" context="{'group_by': 'batch_id'}"/>
+                    <filter name="group_by_state" string="State" context="{'group_by': 'state'}"/>
+                </group>
+            </search>
         </field>
     </record>
 
@@ -53,8 +90,10 @@
                         </group>
                         <group>
                             <field name="street"/>
+                            <field name="street2"/>
                             <field name="city"/>
                             <field name="zip_code"/>
+                            <field name="state_name"/>
                             <field name="country_name"/>
                         </group>
                         <group>
@@ -62,6 +101,7 @@
                             <field name="batch_id" readonly="1"/>
                             <field name="source_ref" readonly="1" groups="base.group_no_one"/>
                             <field name="linked_record_ref" readonly="1"/>
+                            <field name="instagram_enrichment_note" readonly="1" invisible="not instagram_enrichment_note"/>
                         </group>
                     </group>
                     <notebook>
@@ -95,20 +135,52 @@
         <field name="context">{'search_default_new': 1}</field>
     </record>
 
+    <!-- Bulk actions: both action_ignore and action_compute_candidates
+         are already written to operate on a multi-record recordset (no
+         ensure_one), so exposing them here needs no new business logic
+         - just the binding that makes them appear in the list view's
+         gear/Action menu for a multi-selection. -->
+    <record id="action_server_staging_bulk_ignore" model="ir.actions.server">
+        <field name="name">Ignore Selected</field>
+        <field name="model_id" ref="model_import_staging_record"/>
+        <field name="binding_model_id" ref="model_import_staging_record"/>
+        <field name="binding_type">action</field>
+        <field name="binding_view_types">list</field>
+        <field name="state">code</field>
+        <field name="code">records.action_ignore()</field>
+    </record>
+
+    <record id="action_server_staging_bulk_recompute" model="ir.actions.server">
+        <field name="name">Recompute Matches (Selected)</field>
+        <field name="model_id" ref="model_import_staging_record"/>
+        <field name="binding_model_id" ref="model_import_staging_record"/>
+        <field name="binding_type">action</field>
+        <field name="binding_view_types">list</field>
+        <field name="state">code</field>
+        <field name="code">records.action_compute_candidates()</field>
+    </record>
+
     <!-- Batch views -->
     <record id="view_import_batch_list" model="ir.ui.view">
         <field name="name">import.batch.list</field>
         <field name="model">import.batch</field>
         <field name="arch" type="xml">
-            <tree>
+            <tree decoration-danger="error_count &gt; 0">
                 <field name="name"/>
                 <field name="source_type"/>
                 <field name="create_date"/>
+                <field name="processing_state" widget="badge"
+                       decoration-info="processing_state == 'queued'"
+                       decoration-warning="processing_state == 'processing'"
+                       decoration-success="processing_state == 'done'"/>
+                <field name="pending_count" string="Pending" invisible="processing_state == 'done'"/>
                 <field name="staging_count" string="Total"/>
                 <field name="new_count" string="New"/>
                 <field name="linked_count" string="Linked"/>
                 <field name="created_count" string="Created"/>
+                <field name="skipped_count" string="Skipped"/>
                 <field name="ignored_count" string="Ignored"/>
+                <field name="error_count" string="Errors"/>
             </tree>
         </field>
     </record>
@@ -119,10 +191,28 @@
         <field name="arch" type="xml">
             <form>
                 <sheet>
+                    <widget name="web_ribbon" title="Queued" bg_color="text-bg-info"
+                            invisible="processing_state != 'queued'"/>
+                    <widget name="web_ribbon" title="Processing" bg_color="text-bg-warning"
+                            invisible="processing_state != 'processing'"/>
+                    <div class="alert alert-info" role="alert"
+                         invisible="processing_state == 'done'">
+                        Still being processed in the background
+                        (<field name="pending_count" nolabel="1" class="oe_inline"/> row(s)
+                        left) - counts below will keep updating as it works through the
+                        file. Safe to close this and come back later.
+                    </div>
+                    <div class="alert alert-warning" role="alert" invisible="not import_log">
+                        <strong>This import has log entries worth reviewing</strong><span invisible="not error_count"> (<field name="error_count" nolabel="1" class="oe_inline"/> row error(s))</span>.
+                        See the Import Log tab below for detail. Rows that failed to
+                        create were not staged at all; rows noted as "matching
+                        failed" were staged and just need Recompute Matches.
+                    </div>
                     <group>
                         <field name="name"/>
                         <field name="source_type"/>
                         <field name="profile_id"/>
+                        <field name="skipped_count" string="Skipped (empty name / duplicate)"/>
                     </group>
                     <field name="staging_ids">
                         <tree decoration-muted="state == 'ignored'" decoration-success="state in ('linked', 'created')">
@@ -131,14 +221,21 @@
                             <field name="phone"/>
                             <field name="function"/>
                             <field name="street"/>
+                            <field name="street2"/>
                             <field name="city"/>
                             <field name="zip_code"/>
+                            <field name="state_name"/>
                             <field name="country_name"/>
                             <field name="tag_names"/>
                             <field name="best_confidence" widget="percentage" string="Best Match %"/>
                             <field name="state" widget="badge"/>
                         </tree>
                     </field>
+                    <notebook invisible="not import_log">
+                        <page string="Import Log">
+                            <field name="import_log" readonly="1" nolabel="1"/>
+                        </page>
+                    </notebook>
                 </sheet>
             </form>
         </field>

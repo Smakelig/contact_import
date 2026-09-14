@@ -2,8 +2,8 @@
 # License LGPL-3.0 or later (http://www.gnu.org/licenses/lgpl).
 import base64
 import csv
-import hashlib
 import io
+import json
 import logging
 
 from odoo import fields, models
@@ -68,6 +68,13 @@ class ContactImportCsvWizard(models.TransientModel):
         default="Address 1 - Street",
         help="Maps to Street (res.partner.street). e.g. Google's 'Address 1 - Street'.",
     )
+    street2_column = fields.Char(
+        string="Street 2 column",
+        default="Address 1 - Extended Address",
+        help="Maps to Street 2 (res.partner.street2), a second address line. "
+             "Best-guess default for Google's export naming - not verified "
+             "against a live export, check against your actual file.",
+    )
     city_column = fields.Char(
         default="Address 1 - City",
         help="Maps to City (res.partner.city). e.g. Google's 'Address 1 - City'.",
@@ -76,6 +83,14 @@ class ContactImportCsvWizard(models.TransientModel):
         string="Postal Code column",
         default="Address 1 - Postal Code",
         help="Maps to ZIP (res.partner.zip). e.g. Google's 'Address 1 - Postal Code'.",
+    )
+    state_column = fields.Char(
+        string="State/Province column",
+        default="Address 1 - Region",
+        help="Maps to State/Province (res.partner.state_id), resolved to a "
+             "real record scoped to the resolved country. Best-guess "
+             "default for Google's export naming - not verified against a "
+             "live export, check against your actual file.",
     )
     country_column = fields.Char(
         default="Address 1 - Country",
@@ -131,6 +146,70 @@ class ContactImportCsvWizard(models.TransientModel):
                         lines.append("%s: %s" % (col, value))
         return "\n".join(lines)
 
+    # (attribute, human label) for every optional CSV column mapping -
+    # used to warn when a configured column doesn't actually exist in
+    # the uploaded file, so a typo (or an unmodified Google-export
+    # default against a non-Google file) doesn't silently leave a field
+    # blank for every single row with no indication why. name/first/last
+    # name columns aren't in this list - those are validated separately
+    # up front and block the import outright if none resolve, since
+    # without a name there's nothing to stage at all.
+    _OPTIONAL_COLUMN_FIELDS = [
+        ("email_column", "Email"),
+        ("phone_column", "Phone"),
+        ("job_title_column", "Job Title"),
+        ("labels_column", "Tags/Labels"),
+        ("notes_column", "Notes"),
+        ("street_column", "Street"),
+        ("street2_column", "Street 2"),
+        ("city_column", "City"),
+        ("zip_column", "Postal Code"),
+        ("state_column", "State/Province"),
+        ("country_column", "Country"),
+    ]
+
+    def _missing_column_warning(self, fieldnames):
+        """Returns a one-line warning (or None) listing every configured
+        optional column that isn't actually present in the uploaded
+        file's headers - each of those fields will be blank on every
+        staged row. extra_notes_columns is deliberately excluded: it's
+        meant as an over-inclusive list of possible extras, so most
+        entries not matching a given file is the expected case, not a
+        typo."""
+        missing = []
+        for attr, label in self._OPTIONAL_COLUMN_FIELDS:
+            column = getattr(self, attr)
+            if column and column not in fieldnames:
+                missing.append("%s ('%s')" % (label, column))
+        if not missing:
+            return None
+        return (
+            "Note: these configured columns were not found in the uploaded "
+            "file and were left blank for every row: %s" % ", ".join(missing)
+        )
+
+    def _row_values(self, row, fieldnames):
+        """Pulls every mapped column out of one CSV row into a plain
+        dict of staging-field values. Raised out of the main loop's
+        savepoint like everything else per-row, so a row with a value
+        that can't be processed (e.g. an encoding artefact only this
+        specific row triggers) is skipped cleanly rather than aborting
+        every row after it."""
+        return {
+            "name": self._resolve_name(row, fieldnames),
+            "email": (row.get(self.email_column) or "").strip() if self.email_column else "",
+            "phone": (row.get(self.phone_column) or "").strip() if self.phone_column else "",
+            "job_title": (row.get(self.job_title_column) or "").strip() if self.job_title_column else "",
+            "tag_names": (row.get(self.labels_column) or "").strip() if self.labels_column else "",
+            "street": (row.get(self.street_column) or "").strip() if self.street_column else "",
+            "street2": (row.get(self.street2_column) or "").strip() if self.street2_column else "",
+            "city": (row.get(self.city_column) or "").strip() if self.city_column else "",
+            "zip_code": (row.get(self.zip_column) or "").strip() if self.zip_column else "",
+            "state_name": (row.get(self.state_column) or "").strip() if self.state_column else "",
+            "country_name": (row.get(self.country_column) or "").strip() if self.country_column else "",
+            "notes": self._build_notes(row, fieldnames),
+        }
+
     def action_import(self):
         self.ensure_one()
         if not self.csv_file:
@@ -165,61 +244,68 @@ class ContactImportCsvWizard(models.TransientModel):
             "name": self.batch_name,
             "source_type": "csv",
             "profile_id": profile.id,
+            "processing_state": "queued",
         })
 
-        created = 0
-        skipped = 0
-        for row in reader:
-            name = self._resolve_name(row, reader.fieldnames)
-            if not name:
-                skipped += 1
-                continue
-            email = (row.get(self.email_column) or "").strip() if self.email_column else ""
-            phone = (row.get(self.phone_column) or "").strip() if self.phone_column else ""
-            job_title = (row.get(self.job_title_column) or "").strip() if self.job_title_column else ""
-            tag_names = (row.get(self.labels_column) or "").strip() if self.labels_column else ""
-            street = (row.get(self.street_column) or "").strip() if self.street_column else ""
-            city = (row.get(self.city_column) or "").strip() if self.city_column else ""
-            zip_code = (row.get(self.zip_column) or "").strip() if self.zip_column else ""
-            country_name = (row.get(self.country_column) or "").strip() if self.country_column else ""
-            notes = self._build_notes(row, reader.fieldnames)
+        # This part - decode + resolve column values per row - is pure
+        # Python, no DB round-trips, so it stays fast even for a very
+        # large file. What used to be slow here (a DB search for
+        # dedup + record creation + matching per row, all inside one
+        # HTTP request) is deferred to import.batch's background
+        # processor instead - see models/import_batch.py. That's the
+        # actual point of this rewrite: queuing thousands of rows this
+        # way takes a couple of seconds; processing them can now take
+        # as long as it needs to, in the background, without tying up
+        # a web worker or risking a request timeout.
+        log_notes = []
+        missing_column_note = self._missing_column_warning(reader.fieldnames)
+        if missing_column_note:
+            log_notes.append(missing_column_note)
 
-            # Stable ref so re-importing the same file doesn't create
-            # duplicate staging rows for rows already seen before.
-            source_ref = hashlib.sha256(
-                ("%s|%s|%s" % (name, email, phone)).encode("utf-8")
-            ).hexdigest()
+        pending_rows = []
+        row_iter = enumerate(reader, start=2)
+        last_row_seen = 1
+        while True:
+            try:
+                row_number, row = next(row_iter)
+            except StopIteration:
+                break
+            except csv.Error as exc:
+                # The parser itself choked partway through the file
+                # (bad quoting, truncated file, etc). Keep everything
+                # read so far rather than losing it, and tell the
+                # person the file was only partially read.
+                _logger.exception(
+                    "contact_import: batch '%s' CSV parser stopped around row %d",
+                    batch.name, last_row_seen + 1,
+                )
+                log_notes.append(
+                    "CSV parsing stopped early around row %d (%s) - the file may "
+                    "be truncated or have a malformed quoted field. Only the rows "
+                    "before this point were queued." % (last_row_seen + 1, exc)
+                )
+                break
+            last_row_seen = row_number
+            vals = self._row_values(row, reader.fieldnames)
+            pending_rows.append({"row_number": row_number, "vals": vals, "raw": row})
 
-            existing = self.env["import.staging.record"].search([
-                ("profile_id", "=", profile.id),
-                ("source_ref", "=", source_ref),
-            ], limit=1)
-            if existing:
-                skipped += 1
-                continue
+        batch.write({
+            "pending_rows_json": json.dumps(pending_rows) if pending_rows else False,
+            "pending_count": len(pending_rows),
+            "import_log": "\n".join(log_notes) if log_notes else False,
+        })
 
-            staging = self.env["import.staging.record"].create({
-                "profile_id": profile.id,
-                "batch_id": batch.id,
-                "source_ref": source_ref,
-                "display_name": name,
-                "email": email or False,
-                "phone": phone or False,
-                "function": job_title or False,
-                "tag_names": tag_names or False,
-                "street": street or False,
-                "city": city or False,
-                "zip_code": zip_code or False,
-                "country_name": country_name or False,
-                "notes": notes or False,
-                "raw_data": str(row),
-            })
-            staging.action_compute_candidates()
-            created += 1
+        # Kick off background processing right away rather than waiting
+        # for this cron's own scheduled interval - see
+        # data/ir_cron_data.xml for why a scheduled fallback interval
+        # still exists alongside this.
+        cron = self.env.ref("contact_import.ir_cron_process_import_batches", raise_if_not_found=False)
+        if cron:
+            cron._trigger()
 
         _logger.info(
-            "contact_import: CSV batch '%s' - %d staged, %d skipped (empty name or duplicate)",
-            batch.name, created, skipped,
+            "contact_import: CSV batch '%s' - %d row(s) queued for background processing",
+            batch.name, len(pending_rows),
         )
 
         return {

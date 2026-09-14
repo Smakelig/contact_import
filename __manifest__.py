@@ -2,7 +2,7 @@
 # License LGPL-3.0 or later (http://www.gnu.org/licenses/lgpl).
 {
     'name': 'Contact Import Staging',
-    'version': '17.0.1.0.0',
+    'version': '17.0.1.1.0',
     'summary': 'Fuzzy-match import staging: review and link/create records without duplicating your database',
     'description': """
         Generic staging/review layer for importing contacts (and, later,
@@ -17,6 +17,9 @@
           schema (import.match.profile / import.match.rule) is deliberately
           generic so a second profile (e.g. Products) can be added later
           without a schema change - see models/import_match_profile.py.
+        - Large imports are queued and processed in the background in
+          bounded chunks (see import.batch and data/ir_cron_data.xml)
+          instead of blocking the browser/request for the whole file.
 
         Requires PostgreSQL's pg_trgm extension for name similarity
         matching (enabled automatically on install via post_init_hook).
@@ -29,6 +32,7 @@
     'data': [
         'security/ir.model.access.csv',
         'data/import_match_profile_data.xml',
+        'data/ir_cron_data.xml',
         'views/import_staging_views.xml',
         'views/import_match_profile_views.xml',
         'wizard/csv_import_wizard_views.xml',

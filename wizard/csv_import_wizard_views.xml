@@ -32,8 +32,10 @@
                         <field name="labels_column" string="Labels/Tags column"/>
                         <field name="notes_column" string="Notes column"/>
                         <field name="street_column" string="Street column"/>
+                        <field name="street2_column" string="Street 2 column"/>
                         <field name="city_column" string="City column"/>
                         <field name="zip_column" string="Postal Code column"/>
+                        <field name="state_column" string="State/Province column"/>
                         <field name="country_column" string="Country column"/>
                         <field name="extra_notes_columns"/>
                     </group>

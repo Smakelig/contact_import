@@ -191,6 +191,7 @@
         <field name="arch" type="xml">
             <form>
                 <sheet>
+                    <field name="processing_state" invisible="1"/>
                     <widget name="web_ribbon" title="Queued" bg_color="text-bg-info"
                             invisible="processing_state != 'queued'"/>
                     <widget name="web_ribbon" title="Processing" bg_color="text-bg-warning"
